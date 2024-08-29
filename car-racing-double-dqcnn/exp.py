@@ -71,15 +71,17 @@ from dqcnn import Agent
 import numpy as np
 import torch
 env = gym.make("CarRacing-v2", continuous=False)
-agent = Agent(n_actions=env.action_space.n, action_space=env.action_space, img_dim=env.observation_space.shape[0], lr=0.001)
-frames = [env.observation_space.sample() for _ in range(4)]
+env.reset()
+agent = Agent(n_actions=env.action_space.n, action_space=env.action_space, img_dim=env.observation_space.shape[0], lr=0.001, target_update_itt=10, visualize_itt=100)
 
-# Stack the frames along a new dimension
-stacked_frames = np.stack(frames, axis=-1)
+def collect(state, action):
+    env.unwrapped.s = state
+    next_states = []
+    for i in range(agent.n_frames):
+        next_state, reward, terminated, truncated, _ = env.step(action)
+        next_states.append(next_state)
+    return np.array(next_states)
 
-# Convert the stacked frames to a tensor
-stacked_frames_tensor = torch.tensor(stacked_frames, dtype=torch.float32)
-
-# Add a batch dimension
-print(stacked_frames_tensor.shape)
-# print(env.observation_space.sample().shape)
+s = collect(env.action_space.sample(), env.action_space.sample())
+print(np.shape(s))
+x = agent.preprocess(s)

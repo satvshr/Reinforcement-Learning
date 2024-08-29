@@ -28,35 +28,38 @@ class DQCNN(nn.Module):
         return actions
 
 class Agent():
-    def __init__(self, n_actions, action_space, img_dim, lr, n_frames=4, gamma=0.95, eps=1.0, mem_size=1000, eps_decay=0.05, eps_min=0.05):
+    def __init__(self, n_actions, action_space, img_dim, lr, target_update_itt, visualize_itt, n_frames=4, gamma=0.95, eps=1.0, mem_size=1000, eps_decay=0.05, eps_min=0.05):
         self.n_actions = n_actions
         self.action_space = action_space
         self.n_frames = n_frames
         self.img_dim = img_dim
         self.lr = lr
+        self.target_update_itt = target_update_itt
+        self.visualize_itt = visualize_itt
         self.gamma = gamma
         self.eps = eps
         self.mem_size = mem_size
         self.mem_ctr = 0
         self.eps_decay = eps_decay
         self.eps_min = eps_min
-        self.online = DQCNN(n_actions, lr)
-        self.target = DQCNN(n_actions, lr)
+        self.Q_online = DQCNN(n_actions, lr)
+        self.Q_target = DQCNN(n_actions, lr)
+        self.Q_target.load_state_dict(self.Q_online.state_dict())
 
-        self.state_memory = np.zeros((self.mem_size, self.img_dim, self.img_dim))
+        self.state_memory = np.zeros((self.mem_size, self.n_frames, self.img_dim, self.img_dim))
         self.action_memory = np.zeros(self.mem_size)
-        self.next_state_memory = np.zeros((self.mem_size, self.img_dim, self.img_dim))
+        self.next_state_memory = np.zeros((self.mem_size, self.n_frames,self.img_dim, self.img_dim))
         self.reward_memory = np.zeros(self.mem_size)
         self.termination_memory = np.zeros(self.mem_size)
 
     def preprocess(self, states):
-        # (height, width, 3, frames) -> (height, width, 3*frames)
-        states = T.tensor(states).reshape(self.img_dim, self.img_dim, -1)
+        # (n_frames, height, width, 3) -> (3, n_frames, height, width)
+        states = T.tensor(states).permute(3, 0, 1, 2)
 
-        # (height, width, 3*frames) -> (3*frames, height, width)
-        states = states.permute(2, 0, 1)
+        # (3, n_frames, height, width) -> (3*n_frames, height, width)
+        states = states.reshape(3*self.n_frames, self.img_dim, self.img_dim)
 
-        # (3*frames, height, width) -> (frames, height, width) is the obj of the below code block
+        # (3*n_frames, height, width) -> (n_frames, height, width) is the obj of the below code block
         # Stack each frame into groups of 3 (r,g,b)
         states = T.stack([states[i:i+3] for i in range(0, states.size()[0], 3)])
         

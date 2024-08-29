@@ -21,9 +21,10 @@ for i in range(n_games):
         agent.store_transition(observation, action, reward, next_observation, done)
         agent.learn()
         observation = next_observation
-        if i % agent.target_update_freq == 0:
-            agent.Q_target.load_state_dict(agent.Q_eval.state_dict())
 
+    if i % agent.target_update_freq == 0:
+        agent.Q_target.load_state_dict(agent.Q_eval.state_dict())
+        
     scores.append(score)
     eps_history.append(agent.epsilon)
 
