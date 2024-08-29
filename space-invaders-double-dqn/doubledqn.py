@@ -8,13 +8,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 
-"""
-We will have 2 classes, one for DQN and the other for the agent. This is done as the agent is not a dqn but the agent HAS a dqn.
-It also has a memory to choose the best actions as well as learning from its experience.
-
-Here we will only use a replay network as a target network is not required.
-""" 
-
 class DQNetwork(nn.Module):
     def __init__(self, lr, input_dims, fc1_dims, fc2_dims, n_actions):
         super(DQNetwork, self).__init__()
@@ -100,7 +93,6 @@ class Agent():
 
         q_eval = self.Q_eval.forward(state_batch)[batch_index, action_batch]
         q_next = self.Q_eval.forward(new_state_batch)
-        q_next[terminal_batch] = 0.0
 
         # Use the target network to get the best action indices
         a_best = T.argmax(q_next, dim=1)
