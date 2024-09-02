@@ -28,11 +28,12 @@ class DQCNN(nn.Module):
         return actions
 
 class Agent():
-    def __init__(self, n_actions, action_space, img_dim, lr, target_update_itt, visualize_itt, n_frames=4, gamma=0.95, eps=1.0, mem_size=1000, eps_decay=0.05, eps_min=0.05):
+    def __init__(self, n_actions, action_space, img_dim, batch_size, lr, target_update_itt, visualize_itt, n_frames=4, gamma=0.95, eps=1.0, mem_size=1000, eps_decay=0.05, eps_min=0.05):
         self.n_actions = n_actions
         self.action_space = action_space
         self.n_frames = n_frames
         self.img_dim = img_dim
+        self.batch_size = batch_size
         self.lr = lr
         self.target_update_itt = target_update_itt
         self.visualize_itt = visualize_itt
@@ -60,7 +61,7 @@ class Agent():
         states = states.reshape(3*self.n_frames, self.img_dim, self.img_dim)
 
         # (3*n_frames, height, width) -> (n_frames, height, width) is the obj of the below code block
-        # Stack each frame into groups of 3 (r,g,b)
+        # Stack each frame into groups of 3, (r,g,b)
         states = T.stack([states[i:i+3] for i in range(0, states.size()[0], 3)])
         
         # Now we have states in the shape (frames, 3, height, width), we grayscale each frame using torchvision
@@ -101,4 +102,19 @@ class Agent():
         self.mem_ctr += 1 
 
     def learn(self):
-        pass
+        if self.mem_ctr < self.batch_size:
+            return
+        
+        self.Q_online.optimizer.zero_grad()
+        max_mem = min(self.mem_size, self.mem_ctr)
+        batch = np.random.choice(max_mem, self.batch_size, replace=False)
+
+        batch_idx = np.arange(self.batch_size, dtype=np.int32)
+
+        state_batch = T.tensor(self.state_memory[batch]).to(self.Q_online.device)
+        new_state_batch = T.tensor(self.new_state_memory[batch]).to(self.Q_online.device)
+        reward_batch = T.tensor(self.reward_memory[batch]).to(self.Q_online.device)
+        terminal_batch = T.tensor(self.terminal_memory[batch]).to(self.Q_online.device)
+        action_batch = T.tensor(self.terminal_memory[batch]).to(self.Q_online.device)     
+
+        
