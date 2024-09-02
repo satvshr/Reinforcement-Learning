@@ -99,7 +99,7 @@ class Agent():
 
         # Use the target network to get the Q-values for the best actions and compute target Q-values
         # (1-terminal_batch) to ensure no future rewards considered
-        q_target = reward_batch + (T.ones(64) - terminal_batch.int()) * self.gamma * self.Q_target.forward(new_state_batch)[batch_index, a_best].detach()
+        q_target = reward_batch + (T.ones(self.batch_size).to(self.Q_eval.device) - terminal_batch.int()) * self.gamma * self.Q_target.forward(new_state_batch)[batch_index, a_best].detach()
 
         loss = self.Q_eval.loss(q_eval, q_target).to(self.Q_eval.device)
 

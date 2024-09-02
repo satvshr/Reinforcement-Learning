@@ -5,6 +5,7 @@ import numpy as np
 
 env = gym.make("CarRacing-v2", continuous=False)
 agent = Agent(n_actions=env.action_space.n, action_space=env.action_space, img_dim=env.observation_space.shape[0], batch_size=16, lr=0.001, target_update_itt=10, visualize_itt=100)
+scores = []
 n_episodes = 500
 
 def collect(state, action):
@@ -31,7 +32,7 @@ for i in range(n_episodes):
     states, _ = collect(state, None)  # Collect initial state without any action
 
     while not done:
-        # Preprocess the collected states
+        # (n_frames, height, width, 3) -> (n_frames, height, width)
         states = agent.preprocess(states)
         
         # Choose an action based on the current state
@@ -39,22 +40,32 @@ for i in range(n_episodes):
         
         # Collect the next states and accumulated reward after taking the action
         next_states, accumulated_reward = collect(state, action)
-        
+        next_states_modified = agent.preprocess(next_states)
+
         # Take the action in the environment
         next_state, _, terminated, truncated, _ = env.step(action)
         
         if terminated or truncated:
             done = True
+            print("yes")
+
+        score += accumulated_reward
 
         # Store the transition in memory
-        agent.store_transition(state, action, next_states, accumulated_reward, done)
+        agent.store_transition(states, action, next_states_modified, accumulated_reward, done)
         agent.learn()
 
         # Update the current state
         state = next_state
         states = next_states  # Update the states with the next states
-
-    actions.append(action)
+        actions.append(action)
+        print(accumulated_reward)
+        
+    scores.append(score)
+    # Avg score of last 100 games
+    avg_score = np.mean(scores[-100:])
+    
+    print('episode ', i, 'score %.2f' % score, 'average score %.2f' % avg_score, 'epsilon %.2f' % agent.epsilon)
 
     # Update epsilon for exploration-exploitation trade-off
     agent.eps = agent.eps - agent.eps_decay if agent.eps > agent.eps_min else agent.eps_min

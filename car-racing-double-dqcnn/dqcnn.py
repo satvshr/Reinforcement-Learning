@@ -17,12 +17,14 @@ class DQCNN(nn.Module):
 
         self.optimizer = optim.Adam(self.parameters(), lr=lr)
         self.loss = nn.MSELoss()
-        self.device = 'cuda:0'
+        self.device = T.device('cuda' if T.cuda.is_available() else 'cpu')
+        self.to(self.device)
 
     def forward(self, state):
         x = F.relu(self.conv1(state))
         x = F.relu(self.conv2(x))
-        x = F.relu(self.fc1(x.reshape(-1)))
+        x = x.view(x.size(0), -1)
+        x = F.relu(self.fc1(x))
         actions = self.fc2(x)
 
         return actions
@@ -49,9 +51,9 @@ class Agent():
 
         self.state_memory = np.zeros((self.mem_size, self.n_frames, self.img_dim, self.img_dim))
         self.action_memory = np.zeros(self.mem_size)
-        self.next_state_memory = np.zeros((self.mem_size, self.n_frames,self.img_dim, self.img_dim))
+        self.next_state_memory = np.zeros((self.mem_size, self.n_frames, self.img_dim, self.img_dim))
         self.reward_memory = np.zeros(self.mem_size)
-        self.termination_memory = np.zeros(self.mem_size)
+        self.terminal_memory = np.zeros(self.mem_size)
 
     def preprocess(self, states):
         # (n_frames, height, width, 3) -> (3, n_frames, height, width)
@@ -77,7 +79,7 @@ class Agent():
         # Stack grayscale frames
         states = T.stack(grayscale_frames)
         
-        # Now we have grayscaled-states in shape (frames, 1, height, width) so we reshape it to (frames, height, width)
+        # Now we have grayscaled-states in shape (n_frames, 1, height, width) so we reshape it to (n_frames, height, width)
         states = states.squeeze(1)
 
         return states   
@@ -97,7 +99,7 @@ class Agent():
         self.action_memory[mem_idx] = action
         self.next_state_memory[mem_idx] = next_state
         self.reward_memory[mem_idx] = reward
-        self.termination_memory[mem_idx] = done
+        self.terminal_memory[mem_idx] = done
 
         self.mem_ctr += 1 
 
@@ -109,12 +111,25 @@ class Agent():
         max_mem = min(self.mem_size, self.mem_ctr)
         batch = np.random.choice(max_mem, self.batch_size, replace=False)
 
-        batch_idx = np.arange(self.batch_size, dtype=np.int32)
+        batch_index = np.arange(self.batch_size, dtype=np.int32)
 
-        state_batch = T.tensor(self.state_memory[batch]).to(self.Q_online.device)
-        new_state_batch = T.tensor(self.new_state_memory[batch]).to(self.Q_online.device)
-        reward_batch = T.tensor(self.reward_memory[batch]).to(self.Q_online.device)
-        terminal_batch = T.tensor(self.terminal_memory[batch]).to(self.Q_online.device)
-        action_batch = T.tensor(self.terminal_memory[batch]).to(self.Q_online.device)     
+        state_batch = T.tensor(self.state_memory[batch]).float().to(self.Q_online.device)
+        action_batch = T.tensor(self.terminal_memory[batch]).long().to(self.Q_online.device)     
+        new_state_batch = T.tensor(self.next_state_memory[batch]).float().to(self.Q_online.device)
+        reward_batch = T.tensor(self.reward_memory[batch]).float().to(self.Q_online.device)
+        terminal_batch = T.tensor(self.terminal_memory[batch]).float().to(self.Q_online.device)
 
-        
+        q_online = self.Q_online.forward(state_batch)[batch_index, action_batch]
+        q_next = self.Q_online.forward(new_state_batch)
+
+        # Use the target network to get the best action indices
+        a_best = T.argmax(q_next, dim=1)
+
+        # Use the target network to get the Q-values for the best actions and compute target Q-values
+        # (1-terminal_batch) to ensure no future rewards considered
+        q_target = reward_batch + (T.ones(self.batch_size).float().to(self.Q_online.device) - terminal_batch.int()) * self.gamma * self.Q_target.forward(new_state_batch)[batch_index, a_best].detach()
+
+        loss = self.Q_online.loss(q_online, q_target).to(self.Q_online.device)
+
+        loss.backward()
+        self.Q_online.optimizer.step()        
