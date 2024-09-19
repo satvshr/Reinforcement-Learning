@@ -2,9 +2,10 @@ import gymnasium as gym
 from dqcnn import Agent
 from utils import visualize
 import numpy as np
+import time
 
 env = gym.make("CarRacing-v2", continuous=False)
-agent = Agent(n_actions=env.action_space.n, action_space=env.action_space, img_dim=env.observation_space.shape[0], batch_size=16, lr=0.001, target_update_itt=10, visualize_itt=100)
+agent = Agent(n_actions=env.action_space.n, action_space=env.action_space, img_dim=env.observation_space.shape[0], batch_size=16, lr=0.001, target_update_itt=5, visualize_itt=5)
 scores = []
 n_episodes = 500
 
@@ -27,7 +28,9 @@ for i in range(n_episodes):
     done = False
     state, info = env.reset()
     actions = []
-    
+    # Initialize the timer
+    start_time = time.time()
+
     # Collect the initial state
     states, _ = collect(state, None)  # Collect initial state without any action
 
@@ -45,9 +48,15 @@ for i in range(n_episodes):
         # Take the action in the environment
         next_state, _, terminated, truncated, _ = env.step(action)
         
+        # Check if the time limit has been exceeded
+        elapsed_time = time.time() - start_time
+        if elapsed_time > 45:
+            done = True
+            print("time")
+
         if terminated or truncated:
             done = True
-            print("yes")
+            print("termination")
 
         score += accumulated_reward
 
@@ -59,19 +68,16 @@ for i in range(n_episodes):
         state = next_state
         states = next_states  # Update the states with the next states
         actions.append(action)
-        print(accumulated_reward)
         
     scores.append(score)
     # Avg score of last 100 games
     avg_score = np.mean(scores[-100:])
     
-    print('episode ', i, 'score %.2f' % score, 'average score %.2f' % avg_score, 'epsilon %.2f' % agent.epsilon)
-
-    # Update epsilon for exploration-exploitation trade-off
-    agent.eps = agent.eps - agent.eps_decay if agent.eps > agent.eps_min else agent.eps_min
+    print('episode ', i, 'score %.2f' % score, 'average score %.2f' % avg_score, 'epsilon %.2f' % agent.eps)
 
     # Visualize the actions every visualize_itt episodes
     if i % agent.visualize_itt == 0:
+        print("visualization triggered")
         visualize(actions, i)
 
     # Update the target network every target_update_itt episodes

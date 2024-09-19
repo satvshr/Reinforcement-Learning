@@ -21,16 +21,19 @@ class DQCNN(nn.Module):
         self.to(self.device)
 
     def forward(self, state):
+        if len(state.shape) == 3:  # If shape is [32, 24, 24], i.e. no batch
+            state = state.unsqueeze(0)  # Add batch dimension: [1, 32, 24, 24]
+
         x = F.relu(self.conv1(state))
         x = F.relu(self.conv2(x))
         x = x.view(x.size(0), -1)
         x = F.relu(self.fc1(x))
         actions = self.fc2(x)
-
+        
         return actions
 
 class Agent():
-    def __init__(self, n_actions, action_space, img_dim, batch_size, lr, target_update_itt, visualize_itt, n_frames=4, gamma=0.95, eps=1.0, mem_size=1000, eps_decay=0.05, eps_min=0.05):
+    def __init__(self, n_actions, action_space, img_dim, batch_size, lr, target_update_itt, visualize_itt, n_frames=4, gamma=0.95, eps=1.0, mem_size=1000, eps_decay=5e-4, eps_min=0.01):
         self.n_actions = n_actions
         self.action_space = action_space
         self.n_frames = n_frames
@@ -85,8 +88,9 @@ class Agent():
         return states   
     
     def choose_action(self, state):
+        state = state.to(self.Q_online.device)
         if np.random.random() > self.eps:
-            action = np.argmax(self.online.forward(state))
+            action = np.argmax(self.Q_online.forward(state).cpu().detach().numpy())
         else:
             action = self.action_space.sample()
         
@@ -130,6 +134,9 @@ class Agent():
         q_target = reward_batch + (T.ones(self.batch_size).float().to(self.Q_online.device) - terminal_batch.int()) * self.gamma * self.Q_target.forward(new_state_batch)[batch_index, a_best].detach()
 
         loss = self.Q_online.loss(q_online, q_target).to(self.Q_online.device)
+
+        # Update epsilon for exploration-exploitation trade-off
+        self.eps = self.eps - self.eps_decay if self.eps > self.eps_min else self.eps_min
 
         loss.backward()
         self.Q_online.optimizer.step()        
