@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
-import torchvision.transforms as transforms
 
 class DQCNN(nn.Module):
     def __init__(self, n_actions, lr, n_frames=4):
@@ -21,9 +20,7 @@ class DQCNN(nn.Module):
         self.to(self.device)
 
     def forward(self, state):
-        if len(state.shape) == 3:  # If shape is [32, 24, 24], i.e. no batch
-            state = state.unsqueeze(0)  # Add batch dimension: [1, 32, 24, 24]
-
+        # state shape: (batch_size, in_channels, height, width)
         x = F.relu(self.conv1(state))
         x = F.relu(self.conv2(x))
         x = x.view(x.size(0), -1)
@@ -59,33 +56,20 @@ class Agent():
         self.terminal_memory = np.zeros(self.mem_size)
 
     def preprocess(self, states):
-        # (n_frames, height, width, 3) -> (3, n_frames, height, width)
-        states = T.tensor(states).permute(3, 0, 1, 2)
-
-        # (3, n_frames, height, width) -> (3*n_frames, height, width)
-        states = states.reshape(3*self.n_frames, self.img_dim, self.img_dim)
-
-        # (3*n_frames, height, width) -> (n_frames, height, width) is the obj of the below code block
-        # Stack each frame into groups of 3, (r,g,b)
-        states = T.stack([states[i:i+3] for i in range(0, states.size()[0], 3)])
+        # states: (n_frames, height, width, 3)
+        # Convert to tensor and normalize pixel values
+        states = T.tensor(states, dtype=T.float32) / 255.0  # Normalize to [0, 1]
         
-        # Now we have states in the shape (frames, 3, height, width), we grayscale each frame using torchvision
-        grayscale_transform = transforms.Grayscale()
-        grayscale_frames = []
-        for i in range(states.size(0)):
-            frame = states[i]  # (3, height, width)
-            frame = transforms.ToPILImage()(frame)  # Convert to PIL Image
-            frame = grayscale_transform(frame)  # Apply grayscale transformation
-            frame = transforms.ToTensor()(frame)  # Convert back to tensor
-            grayscale_frames.append(frame)
+        # Convert to grayscale by averaging the color channels
+        states = states.mean(dim=-1, keepdim=True)  # Now shape is (n_frames, height, width, 1)
         
-        # Stack grayscale frames
-        states = T.stack(grayscale_frames)
+        # Permute dimensions to (n_frames, 1, height, width)
+        states = states.permute(0, 3, 1, 2)
         
-        # Now we have grayscaled-states in shape (n_frames, 1, height, width) so we reshape it to (n_frames, height, width)
-        states = states.squeeze(1)
-
-        return states   
+        # Stack frames along the channel dimension
+        states = states.view(1, self.n_frames, self.img_dim, self.img_dim)  # Add batch dimension
+        
+        return states.to(self.Q_online.device)
     
     def choose_action(self, state):
         state = state.to(self.Q_online.device)
@@ -99,9 +83,9 @@ class Agent():
     def store_transition(self, state, action, next_state, reward, done):
         mem_idx = self.mem_ctr % self.mem_size
 
-        self.state_memory[mem_idx] = state
+        self.state_memory[mem_idx] = state.cpu().numpy()
         self.action_memory[mem_idx] = action
-        self.next_state_memory[mem_idx] = next_state
+        self.next_state_memory[mem_idx] = next_state.cpu().numpy()
         self.reward_memory[mem_idx] = reward
         self.terminal_memory[mem_idx] = done
 
@@ -118,7 +102,7 @@ class Agent():
         batch_index = np.arange(self.batch_size, dtype=np.int32)
 
         state_batch = T.tensor(self.state_memory[batch]).float().to(self.Q_online.device)
-        action_batch = T.tensor(self.terminal_memory[batch]).long().to(self.Q_online.device)     
+        action_batch = T.tensor(self.action_memory[batch]).long().to(self.Q_online.device)     
         new_state_batch = T.tensor(self.next_state_memory[batch]).float().to(self.Q_online.device)
         reward_batch = T.tensor(self.reward_memory[batch]).float().to(self.Q_online.device)
         terminal_batch = T.tensor(self.terminal_memory[batch]).float().to(self.Q_online.device)
