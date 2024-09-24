@@ -6,7 +6,7 @@ import time
 from collections import deque
 
 env = gym.make("CarRacing-v2", continuous=False)
-agent = Agent(n_actions=env.action_space.n, action_space=env.action_space, img_dim=env.observation_space.shape[0], batch_size=16, lr=0.002, target_update_itt=5, visualize_itt=10)
+agent = Agent(n_actions=env.action_space.n, action_space=env.action_space, img_dim=env.observation_space.shape[0], batch_size=16, lr=0.0002, target_update_itt=5, visualize_itt=10)
 scores = []
 n_episodes = 500
 

@@ -30,7 +30,7 @@ class DQCNN(nn.Module):
         return actions
 
 class Agent():
-    def __init__(self, n_actions, action_space, img_dim, batch_size, lr, target_update_itt, visualize_itt, n_frames=4, gamma=0.95, eps=1.0, mem_size=1000, eps_decay=5e-4, eps_min=0.01):
+    def __init__(self, n_actions, action_space, img_dim, batch_size, lr, target_update_itt, visualize_itt, n_frames=4, gamma=0.95, eps=1.0, mem_size=1000, eps_decay=3e-5, eps_min=0.01):
         self.n_actions = n_actions
         self.action_space = action_space
         self.n_frames = n_frames
@@ -83,9 +83,9 @@ class Agent():
     def store_transition(self, state, action, next_state, reward, done):
         mem_idx = self.mem_ctr % self.mem_size
 
-        self.state_memory[mem_idx] = state.cpu().numpy()
+        self.state_memory[mem_idx] = state.squeeze(0).cpu().numpy()
         self.action_memory[mem_idx] = action
-        self.next_state_memory[mem_idx] = next_state.cpu().numpy()
+        self.next_state_memory[mem_idx] = next_state.squeeze(0).cpu().numpy()
         self.reward_memory[mem_idx] = reward
         self.terminal_memory[mem_idx] = done
 
@@ -99,28 +99,35 @@ class Agent():
         max_mem = min(self.mem_size, self.mem_ctr)
         batch = np.random.choice(max_mem, self.batch_size, replace=False)
 
-        batch_index = np.arange(self.batch_size, dtype=np.int32)
-
+        # Prepare batches
         state_batch = T.tensor(self.state_memory[batch]).float().to(self.Q_online.device)
-        action_batch = T.tensor(self.action_memory[batch]).long().to(self.Q_online.device)     
+        action_batch = T.tensor(self.action_memory[batch]).long().to(self.Q_online.device)
         new_state_batch = T.tensor(self.next_state_memory[batch]).float().to(self.Q_online.device)
         reward_batch = T.tensor(self.reward_memory[batch]).float().to(self.Q_online.device)
         terminal_batch = T.tensor(self.terminal_memory[batch]).float().to(self.Q_online.device)
 
-        q_online = self.Q_online.forward(state_batch)[batch_index, action_batch]
-        q_next = self.Q_online.forward(new_state_batch)
+        # Compute current Q-values
+        q_online_values = self.Q_online.forward(state_batch)
+        q_online = q_online_values.gather(1, action_batch.unsqueeze(1)).squeeze(1)
 
-        # Use the target network to get the best action indices
-        a_best = T.argmax(q_next, dim=1)
+        # Compute target Q-values using Double DQN
+        # Select best actions using the online network
+        q_next_online = self.Q_online.forward(new_state_batch)
+        a_best = T.argmax(q_next_online, dim=1)
 
-        # Use the target network to get the Q-values for the best actions and compute target Q-values
-        # (1-terminal_batch) to ensure no future rewards considered
-        q_target = reward_batch + (T.ones(self.batch_size).float().to(self.Q_online.device) - terminal_batch.int()) * self.gamma * self.Q_target.forward(new_state_batch)[batch_index, a_best].detach()
+        # Evaluate best actions using the target network
+        q_next_target = self.Q_target.forward(new_state_batch)
+        q_target_values = q_next_target.gather(1, a_best.unsqueeze(1)).squeeze(1).detach()
 
+        # Compute the target Q-values
+        non_terminal_mask = (1 - terminal_batch)
+        q_target = reward_batch + non_terminal_mask * self.gamma * q_target_values
+
+        # Compute loss
         loss = self.Q_online.loss(q_online, q_target).to(self.Q_online.device)
 
         # Update epsilon for exploration-exploitation trade-off
-        self.eps = self.eps - self.eps_decay if self.eps > self.eps_min else self.eps_min
+        self.eps = max(self.eps - self.eps_decay, self.eps_min)
 
         loss.backward()
-        self.Q_online.optimizer.step()        
+        self.Q_online.optimizer.step()
