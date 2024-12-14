@@ -1,4 +1,4 @@
-﻿## Reinforcement-Learning
+﻿## Reinforcement-Learning 🤖
 
 1. [frozen-lake-model_free](https://github.com/satvshr/Reinforcement-Learning/blob/main/frozen-lake-model_free/frozen-lake.ipynb): Solving the frozen Lake (non-slippery) environment using:  
    * Monte Carlo
